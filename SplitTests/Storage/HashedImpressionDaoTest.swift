@@ -64,16 +64,20 @@ class HashedImpressionDaoTest: XCTestCase {
     func testUpdateCommitsAllChangesAndExpirationInOneSave() throws {
         let helper = dao.coreDataHelper
         var context: NSManagedObjectContext?
+        let staleTime = Date.nowMillis() - ServiceConstants.hashedImpressionsExpirationMs - 1_000
         helper.performAndWait {
-            guard let expired = helper.create(entity: .hashedImpression) as? HashedImpressionEntity else {
-                return
+            for hash: UInt32 in [100, 101] {
+                guard let expired = helper.create(entity: .hashedImpression) as? HashedImpressionEntity else {
+                    return
+                }
+                expired.impressionHash = hash
+                expired.time = staleTime
+                expired.createdAt = staleTime
+                context = expired.managedObjectContext
             }
-            expired.impressionHash = 100
-            expired.createdAt = Date.nowMillis() - ServiceConstants.hashedImpressionsExpirationMs - 1_000
-            context = expired.managedObjectContext
             helper.save()
         }
-        XCTAssertEqual([100], dao.getAll().map { $0.impressionHash })
+        XCTAssertEqual([100, 101], dao.getAll().map { $0.impressionHash }.sorted())
 
         let saveCount = AtomicInt(0)
         let observer = NotificationCenter.default.addObserver(
@@ -83,13 +87,17 @@ class HashedImpressionDaoTest: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        let batch = SplitTestHelper.createHashedImpressions(start: 1, count: 3)
+        let now = Date.nowMillis()
+        let seenAgain = HashedImpression(impressionHash: 101, time: now, createdAt: now)
+        let batch = SplitTestHelper.createHashedImpressions(start: 1, count: 3) + [seenAgain]
         dao.update(batch)
-        XCTAssertEqual([1, 2, 3], dao.getAll().map { $0.impressionHash }.sorted())
+        let persisted = dao.getAll()
+        XCTAssertEqual([1, 2, 3, 101], persisted.map { $0.impressionHash }.sorted())
+        XCTAssertEqual(now, getImp(persisted, hash: 101)?.time)
         XCTAssertEqual(1, saveCount.value)
 
         dao.update(batch)
-        XCTAssertEqual(3, dao.getAll().count)
+        XCTAssertEqual(4, dao.getAll().count)
         XCTAssertEqual(1, saveCount.value)
     }
 
