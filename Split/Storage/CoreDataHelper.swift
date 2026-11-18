@@ -138,7 +138,7 @@ class CoreDataHelper: @unchecked Sendable {
         }
     }
 
-    private func delete(entity: CoreDataEntity, predicate: NSPredicate? = nil) {
+    func delete(entity: CoreDataEntity, predicate: NSPredicate? = nil) {
 
         managedObjectContext.performAndWait {
             let fetchRequest: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: entity.rawValue)
@@ -146,13 +146,9 @@ class CoreDataHelper: @unchecked Sendable {
                 fetchRequest.predicate = predicate
             }
             do {
-                var entities = try self.managedObjectContext.fetch(fetchRequest)
-                let count = entities.count
-                for _ in 0..<count {
-                    if let entity = entities[0] as? NSManagedObject {
-                        entities.remove(at: 0)
-                        self.managedObjectContext.delete(entity)
-                    }
+                let entities = try self.managedObjectContext.fetch(fetchRequest)
+                for case let entity as NSManagedObject in entities {
+                    self.managedObjectContext.delete(entity)
                 }
             } catch {
                 Logger.e("Error while deleting \(entity.rawValue) entities from storage: \(error.localizedDescription)")

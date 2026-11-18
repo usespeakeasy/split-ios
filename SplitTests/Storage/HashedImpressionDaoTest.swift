@@ -6,6 +6,7 @@
 //  Copyright © 2024 Split. All rights reserved.
 //
 
+import CoreData
 import Foundation
 
 import XCTest
@@ -13,7 +14,7 @@ import XCTest
 
 class HashedImpressionDaoTest: XCTestCase {
 
-    var dao: HashedImpressionDao!
+    var dao: CoreDataHashedImpressionDao!
 
     override func setUp() {
         let queue = DispatchQueue(label: "hashed impression dao test")
@@ -58,6 +59,38 @@ class HashedImpressionDaoTest: XCTestCase {
         XCTAssertEqual(10, all1.count)
         XCTAssertEqual(30, all2.count)
         XCTAssertEqual(50, all3.count)
+    }
+
+    func testUpdateCommitsAllChangesAndExpirationInOneSave() throws {
+        let helper = dao.coreDataHelper
+        var context: NSManagedObjectContext?
+        helper.performAndWait {
+            guard let expired = helper.create(entity: .hashedImpression) as? HashedImpressionEntity else {
+                return
+            }
+            expired.impressionHash = 100
+            expired.createdAt = Date.nowMillis() - ServiceConstants.hashedImpressionsExpirationMs - 1_000
+            context = expired.managedObjectContext
+            helper.save()
+        }
+        XCTAssertEqual([100], dao.getAll().map { $0.impressionHash })
+
+        let saveCount = AtomicInt(0)
+        let observer = NotificationCenter.default.addObserver(
+            forName: .NSManagedObjectContextDidSave, object: try XCTUnwrap(context), queue: nil
+        ) { _ in
+            _ = saveCount.addAndGet(1)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let batch = SplitTestHelper.createHashedImpressions(start: 1, count: 3)
+        dao.update(batch)
+        XCTAssertEqual([1, 2, 3], dao.getAll().map { $0.impressionHash }.sorted())
+        XCTAssertEqual(1, saveCount.value)
+
+        dao.update(batch)
+        XCTAssertEqual(3, dao.getAll().count)
+        XCTAssertEqual(1, saveCount.value)
     }
 
     func testDelete() {

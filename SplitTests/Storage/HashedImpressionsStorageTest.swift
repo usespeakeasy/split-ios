@@ -101,6 +101,37 @@ class HashedImpressionsStorageTests: XCTestCase {
         XCTAssertEqual(count + ServiceConstants.maxHashedImpressionsQueueSize, countAfter)
     }
 
+    func testSaveOnlyPersistsChangedHashesAndSkipsEmptyFlush() {
+        hashedStorage.loadFromDb()
+        hashedStorage.save()
+
+        hashedStorage.set(100, for: 1)
+        hashedStorage.set(200, for: 1)
+        hashedStorage.set(300, for: 42)
+        hashedStorage.save()
+        hashedStorage.save()
+
+        XCTAssertEqual(1, persistentStorage.updates.count)
+        let batch = persistentStorage.updates.first ?? []
+        XCTAssertEqual([1, 42], batch.map { $0.impressionHash }.sorted())
+        XCTAssertEqual(200, persistentStorage.items[1]?.time)
+        XCTAssertEqual(300, persistentStorage.items[42]?.time)
+        XCTAssertNotNil(hashedStorage.get(for: 2))
+    }
+
+    func testThresholdFlushDoesNotRewritePriorBatch() {
+        let count = ServiceConstants.maxHashedImpressionsQueueSize
+        for i in 1...count {
+            hashedStorage.set(Int64(i), for: UInt32(i))
+        }
+        for i in 1...count {
+            hashedStorage.set(Int64(i), for: 999)
+        }
+
+        XCTAssertEqual([count, 1], persistentStorage.updates.map { $0.count })
+        XCTAssertEqual(Int64(count), persistentStorage.items[999]?.time)
+    }
+
     private func updateTest(save: Bool) {
         hashedStorage.loadFromDb()
 
@@ -139,5 +170,4 @@ class HashedImpressionsStorageTests: XCTestCase {
         }
     }
 }
-
 

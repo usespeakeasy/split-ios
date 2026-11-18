@@ -13,9 +13,11 @@ class PersistentHashedImpressionStorageMock: PersistentHashedImpressionsStorage,
 
     let queue = DispatchQueue(label: "test", target: .global())
     var items = [UInt32: HashedImpression]()
+    private(set) var updates = [[HashedImpression]]()
 
     func update(_ hashes: [HashedImpression]) {
         queue.sync {
+            updates.append(hashes)
             for hash in hashes {
                 items[hash.impressionHash] = hash
             }
